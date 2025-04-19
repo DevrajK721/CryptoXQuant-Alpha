@@ -11,6 +11,7 @@ from binance.client import Client as BC
 import json 
 from tqdm import tqdm
 from datetime import datetime, timedelta
+from statsmodels.tsa.stattools import adfuller, kpss
 from typing import * 
 
 class DataProcessor:
@@ -32,7 +33,7 @@ class DataProcessor:
             self.end_date = vals['Ending Date (YYYY-MM-DD)']
             self.base_currency = vals['Base Currency']
             self.tickers = vals['Tickers of Interest']
-            self.n = vals['Window Size']
+            self.n = 50 # Fetch at least 50 data points, for worst case. 
 
         # Check whether all information has been loaded correctly 
         if not all([self.binance_api_key, self.binance_api_secret, self.start_date, self.end_date, self.base_currency, self.tickers]):
@@ -70,8 +71,9 @@ class DataProcessor:
         self.tickers = [f"{ticker}{self.base_currency}" for ticker in self.tickers]
         
         # Fetch all the crypto data requested 
-        self.crypto_data = {}
-        self.crypto_live_data = {}
+        self.crypto_data = {} # Historical Data 
+        self.crypto_live_data = {} # Live Data (Last n points)
+        self.transforms = {} # Transformation done to data for stationarity
         # Find the path to the project root 
         project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         data_dir = os.path.join(project_root, 'data')
@@ -104,48 +106,99 @@ class DataProcessor:
             
             # Keep Open Time and Close for log returns calculation
             data = data[['Open Time', 'Close']]
-
             data.dropna(inplace=True)
 
-            # Save the processed data to CSV
-            data.to_csv(ticker_file_path, index=False)
-            self.crypto_data[ticker] = data
-            print(f"Data for {ticker} saved successfully to {ticker_file_path}")
+            series = data['Close']
+
+            # Check if stationary 
+            stationary = self.is_stationary(series)
+            if not stationary:
+                # Run make_stationary function
+                series, transformations = self.make_stationary(series)
+                series.dropna(inplace=True)
+                data['Close'] = series
+                self.transforms[ticker] = transformations
+                # Save the processed data to CSV
+                data.to_csv(ticker_file_path, index=False)
+                self.crypto_data[ticker] = data
+                print(f"Data for {ticker} saved successfully to {ticker_file_path} and differenced to be stationary with transforms {self.transforms[ticker]}.")
         
-        print("All crypto data fetched successfully.")
+        print("All crypto data fetched successfully and transformed to be stationary.")
         # Make sure crypto_data isn't empty
         if not self.crypto_data:
             print("Warning: No crypto data was successfully processed.")
         
         print(f"Fetching the last {self.n+1} data points for live data usage.")
-        for ticker in tqdm(self.tickers, desc="Fetching Live Data", unit="pair",
-                    ncols=80, bar_format="{desc}: {percentage:3.0f}%|{bar:30}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]",
-                    colour="red", leave=True, dynamic_ncols=True):
+
+        for ticker in tqdm(self.tickers,
+                        desc="Fetching Live Data", unit="pair",
+                        ncols=80, bar_format="{desc}: {percentage:3.0f}%|{bar:30}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]",
+                        colour="red", leave=True, dynamic_ncols=True):
+
+            ops = self.transforms.get(ticker, [])
+            # count how many diffs you need to “recover” self.n points afterward
+            num_diffs = ops.count('diff')
+            raw_limit  = self.n + num_diffs
+
             try:
-                # Get the most recent self.n+1 klines and extract the close prices
-                recent_klines = self.binance_client.get_klines(
+                klines = self.binance_client.get_klines(
                     symbol=ticker,
                     interval=interval,
-                    limit=self.n+1
+                    limit=raw_limit
                 )
-            
-                # Extract the 'Close' price from each kline and convert to float
-                recent_closes = np.array([float(kline[4]) for kline in recent_klines])
+                closes = np.array([float(k[4]) for k in klines])
+                # turn into a pandas series so we can diff() easily
+                s = pd.Series(closes)
+
+                # re‑apply your recorded transforms in order
+                for op in ops:
+                    if op == 'log':
+                        s = np.log(s)
+                    elif op == 'diff':
+                        s = s.diff()
+                    else:
+                        raise ValueError(f"Unknown transform '{op}' for {ticker}")
+
+                # drop the NaNs created by differencing
+                s = s.dropna().reset_index(drop=True)
+
+                if len(s) != self.n:
+                    print(f"Warning: After transforms, {ticker} has {len(s)} points (expected {self.n}).")
                 
-                if recent_closes.size > 0:
-                    self.crypto_live_data[ticker] = recent_closes
-                else:
-                    print(f"Error: No close price data fetched for {ticker}.")
+                # store the processed window
+                self.crypto_live_data[ticker] = s.values
+
             except Exception as e:
-                print(f"Error fetching live data for {ticker}: {e}")
+                print(f"Error fetching/applying transforms for {ticker}: {e}")
                 continue
         
         print("All live data fetched successfully.")
         print("Data processing completed successfully.")
         
-    # Convert string date to datetime object
-    def str_to_datetime(self, date_str: str) -> datetime:
-        return datetime.strptime(date_str, '%Y-%m-%d')
+    def is_stationary(self, s, signif: float = 0.05):
+        # ADF Test
+        adf_p = adfuller(s.dropna())[1]
+
+        # KPSS Test 
+        kpss_p = kpss(s.dropna(), regression='c', nlags='auto')[1]
+
+        return (adf_p < signif) and (kpss_p > signif)
+    
+    def make_stationary(self, s, max_diff: int = 5):
+        ops = []
+        # log once
+        s = np.log(s)
+        ops.append('log')
+
+        # diff until stationary
+        diffs = 0
+        while (not self.is_stationary(s)) and diffs < max_diff:
+            s = s.diff()
+            ops.append('diff')
+            diffs += 1
+
+        # drop the NaNs and return alongside the operations for reconstruction
+        return s.dropna(), ops
     
 if __name__ == "__main__":
     dp = DataProcessor()  # One-Liner is all it takes to initialize the DataProcessor class)
