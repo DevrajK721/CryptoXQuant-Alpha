@@ -7,13 +7,11 @@ import matplotlib.pyplot as plt
 import os 
 
 # Additional Imports 
-import QuantCoreStats as qcs
 from binance.client import Client as BC 
 import json 
 from tqdm import tqdm
 from datetime import datetime, timedelta
 from typing import * 
-from statsmodels.tsa.stattools import acf as statsmodels_acf
 
 class DataProcessor:
     def __init__(self, secrets_path: str = '../secrets/secrets.json'):
@@ -66,7 +64,7 @@ class DataProcessor:
         elif self.frequency == 'Yearly':
             interval = BC.KLINE_INTERVAL_1YEAR
         else:
-            raise ValueError("Invalid frequency. Choose from 'Daily', 'Weekly', 'Monthly', or 'Yearly'.")
+            raise ValueError("Invalid frequency. Choose from 'Daily', 'Weekly', 'Monthly', or 'Yearly' and update in secrets.json file.")
 
         # Convert tickers to trading pairs 
         self.tickers = [f"{ticker}{self.base_currency}" for ticker in self.tickers]
@@ -82,7 +80,7 @@ class DataProcessor:
             
         for ticker in tqdm(self.tickers, desc="Fetching Crypto Data", unit="pair",
             ncols=80, bar_format="{desc}: {percentage:3.0f}%|{bar:30}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]",
-            colour="green", leave=True, dynamic_ncols=True):
+            colour="blue", leave=True, dynamic_ncols=True):
             # Check if the ticker data already exists
             ticker_file_path = os.path.join(data_dir, f"{ticker}.csv")
             if os.path.exists(ticker_file_path):
@@ -107,19 +105,6 @@ class DataProcessor:
             # Keep Open Time and Close for log returns calculation
             data = data[['Open Time', 'Close']]
 
-            # Compute log daily returns column
-            data['LogReturns'] = np.log(data['Close'] / data['Close'].shift(1))
-            data.dropna(inplace=True)
-            
-            # Now use LogReturns instead of Close price for windowing
-            data = data[['Open Time', 'LogReturns']]
-
-            # Compute windowed returns column using log returns
-            windowed_data = self.df_to_windowed_df(dataframe=data)
-            if windowed_data is None:
-                print(f"Warning: Could not create windowed data for {ticker}. Skipping.")
-                continue
-            data = windowed_data
             data.dropna(inplace=True)
 
             # Save the processed data to CSV
@@ -132,150 +117,35 @@ class DataProcessor:
         if not self.crypto_data:
             print("Warning: No crypto data was successfully processed.")
         
-        print(f"Fetching the last {self.n+1} data points for each ticker to calculate {self.n} log returns.")
+        print(f"Fetching the last {self.n+1} data points for live data usage.")
         for ticker in tqdm(self.tickers, desc="Fetching Live Data", unit="pair",
                     ncols=80, bar_format="{desc}: {percentage:3.0f}%|{bar:30}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]",
-                    colour="blue", leave=True, dynamic_ncols=True):
+                    colour="red", leave=True, dynamic_ncols=True):
             try:
-                # Get the most recent self.n+1 klines to calculate self.n log returns
+                # Get the most recent self.n+1 klines and extract the close prices
                 recent_klines = self.binance_client.get_klines(
                     symbol=ticker,
                     interval=interval,
                     limit=self.n+1
                 )
             
-                # Convert to numpy array with just the 'Close' price
+                # Extract the 'Close' price from each kline and convert to float
                 recent_closes = np.array([float(kline[4]) for kline in recent_klines])
                 
-                if len(recent_closes) >= 2:  # Need at least 2 prices to calculate 1 return
-                    # Calculate log returns
-                    recent_log_returns = np.log(recent_closes[1:] / recent_closes[:-1])
-                    
-                    if len(recent_log_returns) == self.n:
-                        self.crypto_live_data[ticker] = recent_log_returns
-                    else:
-                        print(f"Warning: Could only fetch {len(recent_log_returns)} log returns for {ticker} instead of {self.n}.")
-                        self.crypto_live_data[ticker] = recent_log_returns
+                if recent_closes.size > 0:
+                    self.crypto_live_data[ticker] = recent_closes
                 else:
-                    print(f"Error: Not enough data points to calculate log returns for {ticker}.")
+                    print(f"Error: No close price data fetched for {ticker}.")
             except Exception as e:
                 print(f"Error fetching live data for {ticker}: {e}")
                 continue
         
         print("All live data fetched successfully.")
-
-        # Computing autocorrelations and removing non-stationary data 
-        # Import statsmodels acf function
-        
-        # Set threshold for significant autocorrelations
-        # For 90% confidence interval, we use 1.645/sqrt(n)
-        for ticker in tqdm(self.tickers, desc="Processing Autocorrelations", unit="pair"):
-            # Fix: Check if ticker exists in crypto_data and if 'Target' column exists
-            if (ticker not in self.crypto_data or 
-                self.crypto_data[ticker] is None or 
-                self.crypto_data[ticker].empty or 
-                'Target' not in self.crypto_data[ticker].columns):
-                print(f"Ticker {ticker} missing required data. Skipping autocorrelation threshold calculation.")
-                continue  # Skip this ticker if 'Target' column is missing
-
-            self.ACF_THRESHOLD = 1.645 / np.sqrt(len(self.crypto_data[ticker]['Target'])) * 1.3
-            print(f"Ticker: {ticker} - Autocorrelation significance threshold: {self.ACF_THRESHOLD:.4f}")
-            print(f"Allowed number of deviations: {np.ceil(self.n * 0.1 + 1)}")
-            self.compute_autocorrelations()
-
-            # Using both acf methods for each ticker
-            for tkr, custom_acf in self.acfs.items():
-                custom_acf = np.array(custom_acf)
-                # Get statsmodels acf for the same data
-                sm_acf = statsmodels_acf(self.crypto_data[tkr]['Target'].values, nlags=self.n)
-                
-                # Count how many autocorrelations are above the threshold for each method
-                custom_count_above = np.sum(np.abs(custom_acf) > self.ACF_THRESHOLD)
-                sm_count_above = np.sum(np.abs(sm_acf[1:]) > self.ACF_THRESHOLD)  # Skip lag 0
-                
-                # Calculate maximum allowed deviations for 90% confidence
-                max_allowed_deviations = np.ceil(self.n * 0.1 + 3)
-                
-                # Only remove if both methods agree on non-stationarity
-                if custom_count_above > max_allowed_deviations and sm_count_above > max_allowed_deviations:
-                    print(f"Ticker: {tkr} REMOVED (Non-Stationarity Detected by both methods)")
-                    print(f"  - Custom ACF: {custom_count_above} autocorrelations above threshold")
-                    print(f"  - Statsmodels ACF: {sm_count_above} autocorrelations above threshold")
-                    try:
-                        os.remove(os.path.join(data_dir, f"{tkr}.csv"))
-                        self.crypto_data.pop(tkr, None)
-                        self.crypto_live_data.pop(tkr, None)
-                        print(f"Data for {tkr} removed successfully.")
-                    except Exception as e:
-                        print(f"Error removing data for {tkr}: {e}")
-                else:
-                    print(f"Ticker: {tkr} PASSED (Stationarity Detected)")
-                    print(f"  - Custom ACF: {custom_count_above} autocorrelations above threshold")
-                    print(f"  - Statsmodels ACF: {sm_count_above} autocorrelations above threshold")
-
-        print("Autocorrelation analysis completed successfully.")
         print("Data processing completed successfully.")
         
     # Convert string date to datetime object
     def str_to_datetime(self, date_str: str) -> datetime:
         return datetime.strptime(date_str, '%Y-%m-%d')
-        
-    # Compute windowed returns column 
-    def df_to_windowed_df(self, dataframe: pd.DataFrame):
-        first_date = self.str_to_datetime(self.start_date)
-        last_date  = self.str_to_datetime(self.end_date)
-
-        dataframe = dataframe.set_index('Open Time')
-        sorted_dates = sorted(dataframe.index)
-        if len(sorted_dates) <= self.n:
-            print(f"Error: Not enough data points ({len(sorted_dates)}) for window size {self.n}")
-            return None
-
-        target_date_index = self.n  # Start where we have n previous points
-        dates = []
-        X, Y = [], []
-
-        while target_date_index < len(sorted_dates):
-            target_date = sorted_dates[target_date_index]
-
-            df_subset = dataframe.loc[:target_date].tail(self.n+1)
-            if len(df_subset) != self.n+1:
-                print(f'Error: Window of size {self.n} is too large for date {target_date}')
-                target_date_index += 1
-                continue
-
-            # Use LogReturns instead of Close prices
-            values = df_subset['LogReturns'].to_numpy()
-            x, y = values[:-1], values[-1]
-
-            dates.append(target_date)
-            X.append(x)
-            Y.append(y)
-
-            # Update target_date_index to process the next date
-            target_date_index += 1
-
-        ret_df = pd.DataFrame({})
-        ret_df['Target Date'] = dates
-        X = np.array(X)
-        for i in range(self.n):
-            # Now these are log return lags instead of price lags
-            ret_df[f'LogReturn-Lag-{self.n - i}'] = X[:, i]
-        ret_df['Target'] = Y  # This is now the target log return
-
-        self.windowed_df = ret_df
-
-        return self.windowed_df
-    
-    def compute_autocorrelations(self):
-        self.acfs = {}
-        # Compute the autocorrelations of the log returns for each ticker 
-        for ticker, data in self.crypto_data.items():
-            # Compute autocorrelations
-            acf = qcs.compute_autocorrelations(data['Target'].values, self.n)
-            self.acfs[ticker] = acf
-        return 1
-
     
 if __name__ == "__main__":
     dp = DataProcessor()  # One-Liner is all it takes to initialize the DataProcessor class)
