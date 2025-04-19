@@ -20,20 +20,20 @@ class DataProcessor:
         if not os.path.exists(secrets_path):
             raise FileNotFoundError(f"secrets.json file not found at {secrets_path}. Please ensure the provided path is correct (Hint: Use `pwd` in command line to verify current directory)")
         else:
-            print(f"secrets.json file found at {secrets_path}. Beginning initialization of DataProcessor class.")
             self.secrets_path = secrets_path
+            print(f"secrets.json file found at {secrets_path}. Beginning initialization of DataProcessor class.")
         
         # Load secrets from the JSON file
         with open(self.secrets_path, 'r') as file:
             vals = json.load(file)
             self.binance_api_key = vals['BINANCE_API_KEY']
-            self.binance_api_secret = vals['BINANCE_API_SECRET']
             self.frequency = vals['Trading Frequency (Yearly/Monthly/Weekly/Daily/Hourly/Minutely)']
-            self.start_date = vals['Starting Date (YYYY-MM-DD)']
+            self.binance_api_secret = vals['BINANCE_API_SECRET']
             self.end_date = vals['Ending Date (YYYY-MM-DD)']
+            self.start_date = vals['Starting Date (YYYY-MM-DD)']
             self.base_currency = vals['Base Currency']
-            self.tickers = vals['Tickers of Interest']
             self.n = 50 # Fetch at least 50 data points, for worst case. 
+            self.tickers = vals['Tickers of Interest']
 
         # Check whether all information has been loaded correctly 
         if not all([self.binance_api_key, self.binance_api_secret, self.start_date, self.end_date, self.base_currency, self.tickers]):
@@ -113,17 +113,21 @@ class DataProcessor:
             # Check if stationary 
             stationary = self.is_stationary(series)
             if not stationary:
-                # Run make_stationary function
+                # Run make_stationary function  
                 series, transformations = self.make_stationary(series)
                 series.dropna(inplace=True)
                 data['Close'] = series
                 self.transforms[ticker] = transformations
+
+                # Compute technical indicators and lags
+                data = self.compute_technical_indicators_and_lags(data)
+                data.dropna(inplace=True)
                 # Save the processed data to CSV
                 data.to_csv(ticker_file_path, index=False)
                 self.crypto_data[ticker] = data
                 print(f"Data for {ticker} saved successfully to {ticker_file_path} and differenced to be stationary with transforms {self.transforms[ticker]}.")
         
-        print("All crypto data fetched successfully and transformed to be stationary.")
+        print("All crypto data and indicators fetched/computed successfully and transformed to be stationary.")
         # Make sure crypto_data isn't empty
         if not self.crypto_data:
             print("Warning: No crypto data was successfully processed.")
@@ -199,7 +203,46 @@ class DataProcessor:
 
         # drop the NaNs and return alongside the operations for reconstruction
         return s.dropna(), ops
-    
+
+    def compute_technical_indicators_and_lags(self, df: pd.DataFrame) -> pd.DataFrame:        
+        # Compute EMA Exponential Moving Averages (EMA's) 
+        df['EMA_10'] = df['Close'].ewm(span=10, adjust=False).mean()
+        df['EMA_20'] = df['Close'].ewm(span=20, adjust=False).mean()
+        df['EMA_50'] = df['Close'].ewm(span=50, adjust=False).mean()
+        
+        # Relative Strength Index (RSI) (14)
+        delta = df['Close'].diff()
+        gain = delta.clip(lower=0)
+        loss = -delta.clip(upper=0)
+        avg_gain = gain.rolling(window=14).mean()
+        avg_loss = loss.rolling(window=14).mean()
+        rs = avg_gain / avg_loss
+        df['RSI_14'] = 100 - (100 / (1 + rs))
+        
+        # Bollinger Bands (BB) (20, ±2σ)
+        rolling_mean = df['Close'].rolling(window=20).mean()
+        rolling_std = df['Close'].rolling(window=20).std()
+        df['BB_upper'] = rolling_mean + 2 * rolling_std
+        df['BB_lower'] = rolling_mean - 2 * rolling_std
+        
+        # Rate of Change (ROC) (10)
+        df['ROC_10'] = df['Close'].pct_change(periods=10)
+        
+        # Rolling Volatility (RV) (20-period std of returns)
+        df['Volatility_20'] = df['Close'].pct_change().rolling(window=20).std()
+        
+        # Moving-Average-Convergence-Divergence (MACD) (12,26) and signal (9)
+        ema_12 = df['Close'].ewm(span=12, adjust=False).mean()
+        ema_26 = df['Close'].ewm(span=26, adjust=False).mean()
+        df['MACD'] = ema_12 - ema_26
+        df['MACD_signal'] = df['MACD'].ewm(span=9, adjust=False).mean()
+        
+        # Lags (k) 1 through 30
+        for lag in range(1, 31):
+            df[f'Lag_{lag}'] = df['Close'].shift(lag)
+        
+        return df
+
 if __name__ == "__main__":
     dp = DataProcessor()  # One-Liner is all it takes to initialize the DataProcessor class)
     # For example, let's print "BTCUSDT" data
