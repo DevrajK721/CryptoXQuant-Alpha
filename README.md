@@ -47,4 +47,5 @@ After this has ben set up, calling the DataProcessor Class initializer will auto
 If you are interested in the Quantitative aspect of any part of the strategies, I have uploaded my notes of each section in the `docs` sections of the repository. Alternatively the hyperlinks below will be updated when documentation is available for it:
 
 [Project Overview](docs/overview.md)
+
 [Stationarity Checks (ADF and KPSS)](docs/stationarity_checks.md)
