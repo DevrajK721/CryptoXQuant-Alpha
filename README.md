@@ -41,12 +41,10 @@ Then, you need to set up the `secrets.json` file which will be located at `$PROJ
     "Window Size": 40
 }
 ```
+After this has ben set up, calling the DataProcessor Class initializer will automatically use the data you have provided in the secrets.json file to populate and compute the models for usage. I would recommend against using Hourly Data (Very noisy and remains non-stationary even after differencing operator applied) and Minutely Data (Same issue as Hourly Data but with additional extremely long runtime for fetching data using Binance API). 
 
 ## Documentation 
 If you are interested in the Quantitative aspect of any part of the strategies, I have uploaded my notes of each section in the `docs` sections of the repository. Alternatively the hyperlinks below will be updated when documentation is available for it:
 
 [Project Overview](docs/overview.md)
 [Stationarity Checks (ADF and KPSS)](docs/stationarity_checks.md)
-
-
-After this has ben set up, calling the DataProcessor Class initializer will automatically use the data you have provided in the secrets.json file to populate and compute the models for usage. I would recommend against using Hourly Data (Very noisy and remains non-stationary even after differencing operator applied) and Minutely Data (Same issue as Hourly Data but with additional extremely long runtime for fetching data using Binance API). 
