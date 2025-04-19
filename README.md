@@ -1,4 +1,4 @@
-# CryptoXQuant-Alpha
+# CryptoXQuant-Alpha (Project CxQ-A)
 A multi-faceted research project into a complex alpha incorporating and combining the usage of classical time series models, LSTMs and statistical learning techniques to find a dynamic alpha to optimize a Cryptocurrency portfolio. 
 
 **Note: This project is purely for interest and research purposes. I am not responsible for any losses that occur as a result of using this GitHub Repository, please use at your own risk.**
