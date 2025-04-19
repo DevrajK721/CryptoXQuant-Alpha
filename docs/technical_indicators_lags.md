@@ -57,5 +57,5 @@ def compute_technical_indicators_and_lags(self, df: pd.DataFrame) -> pd.DataFram
 It is important to note that these indicators will not all necessarily be used in conjunction with one another. There will be a tactical implementation of choosing these indicators for each model through incremental additions and their effect on the predictive power of the model via walk-forward or cross-validation. Overall, in each model there is an aim to:
 - Select a small set of diverse indicators covering trend, momentum and volatility
 - Avoid the use of collinear indicators, e.g. the 10-Day and 20-Day EMA 
-- Integrate smoothly into LSTMs and Statistic Models using thresholds showing positive and negative indication, e.g. RSI > 70 = Good.
+- Integrate smoothly into LSTMs and Statistical Models using thresholds showing positive and negative indication, e.g. RSI > 70 = Good.
 

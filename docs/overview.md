@@ -15,9 +15,9 @@ This project aims to be inclusive of many features of Quantitative Finance and F
 
 Overall, this project should be a very good insight into fundamental quantitative analysis of an asset (Crypto in this case but generalizable) and a good way to practice real-world problem solving. As a top level overview, this project entails the following tasks which will later be broken up into multiple sub-tasks.
 
-- [ ] Use the Binance API to fetch historical data for a list of Cryptocurrencies we would be interested in making a portfolio with. 
-- [ ] Compute additional parameters from the fetched historical data, e.g. lags, technical indicators (EMA, RSI, etc.)
-- [ ] Post-Processing the historical data to make sure it is suitable for building LSTM's, statistical time series models, etc. by e.g. checking ACF, PACF, etc. 
+- [x] Use the Binance API to fetch historical data for a list of Cryptocurrencies we would be interested in making a portfolio with. 
+- [x] Compute additional parameters from the fetched historical data, e.g. lags, technical indicators (EMA, RSI, etc.)
+- [x] Post-Processing the historical data to make sure it is suitable for building LSTM's, statistical time series models, etc. by e.g. checking ACF, PACF, etc. 
 - [ ] Using the historical data to build/compute:
 	- [ ] Correlations/Covariances between the assets
 	- [ ] Statistical Time-Series Models, e.g. ARIMA-GARCH 
