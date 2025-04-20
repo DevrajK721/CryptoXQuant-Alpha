@@ -108,24 +108,48 @@ class DataProcessor:
             data = data[['Open Time', 'Close']]
             data.dropna(inplace=True)
 
-            series = data['Close']
+            raw = data['Close'].copy()
 
-            # Check if stationary 
-            stationary = self.is_stationary(series)
-            if not stationary:
-                # Run make_stationary function  
-                series, transformations = self.make_stationary(series)
-                series.dropna(inplace=True)
-                data['Close'] = series
-                self.transforms[ticker] = transformations
+            # run through your make_stationary to get the ops and final series
+            stat_series, ops = self.make_stationary(raw)
+            self.transforms[ticker] = ops
 
-                # Compute technical indicators and lags
-                data = self.compute_technical_indicators_and_lags(data)
-                data.dropna(inplace=True)
-                # Save the processed data to CSV
-                data.to_csv(ticker_file_path, index=False)
-                self.crypto_data[ticker] = data
-                print(f"Data for {ticker} saved successfully to {ticker_file_path} and differenced to be stationary with transforms {self.transforms[ticker]}.")
+            # build all intermediate columns
+            intermediate = {}
+            series = raw.copy()
+            for i, op in enumerate(ops):
+                if op == 'log':
+                    series = np.log(series)
+                elif op == 'diff':
+                    series = series.diff()
+                name = "-".join(ops[: i+1])       # e.g. "log", then "log-diff", then "log-diff-diff"
+                intermediate[name] = series
+
+            # attach them to the DataFrame
+            for name, ser in intermediate.items():
+                data[name] = ser
+
+            # ensure we always have a covariance-ready log-diff
+            if 'log-diff' in intermediate:
+                data['Covariance-LogDiff'] = intermediate['log-diff']
+            else:
+                # if your series was already stationary with only log, then diff once:
+                data['Covariance-LogDiff'] = np.log(raw).diff()
+
+            # finally, store the last intermediate as "Stationary-Close"
+            last_name = "-".join(ops)
+            data['Stationary-Close'] = intermediate[last_name]
+
+            data.dropna(subset=['Stationary-Close'], inplace=True)
+            data.drop(columns=['Close'],                         inplace=True)   # remove raw Close
+            data.rename(columns={'Stationary-Close': 'Close'},    inplace=True)   # now one Close
+
+            data = self.compute_technical_indicators_and_lags(data)
+            data.dropna(inplace=True)
+
+            data.to_csv(ticker_file_path, index=False)
+            self.crypto_data[ticker] = data
+            print(f"Data for {ticker} saved successfully to {ticker_file_path} with transforms {self.transforms[ticker]}.")
         
         print("All crypto data and indicators fetched/computed successfully and transformed to be stationary.")
         # Make sure crypto_data isn't empty
