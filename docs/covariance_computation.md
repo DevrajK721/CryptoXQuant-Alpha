@@ -22,7 +22,7 @@ Now that all the issues have been mitigated, we can go about using the following
 
 Another thing to mention is that we will be using the concept of shrinkage in order to improve our $\Sigma$ estimation. Shrinkage is required in cases where the window size, $T$ is not significantly greater than the number of assets in which case the estimates can get noisy which translates to poor risk estimation. In general, we combat shrinkage with the formula, $$\Sigma_{\text{shrink}} = (1 - \alpha) S + \alpha F$$
 
-Furthermore, we use the $F$ from the Ledoit-Wolf paper as $F = \mu I$, where $\mu = \frac{1}{\# \; \text{Assets}} \text{trace}(S)$. 
+Furthermore, we use the $F$ from the Ledoit-Wolf paper as $F = \mu I$, where $\mu = \frac{1}{\text{Num Assets}} \text{trace}(S)$. 
 
 Since we will likely be doing a large number of linear operations, I found it a potentially useful idea to program the covariance computation between two datasets in `C++` and then make it callable in `Python` by building it with `PyBind11`. Furthermore, the covariance matrix, $\Sigma$ is symmetric and thus only half the values need be computed as the otherside can be populated automatically ($\Sigma_{ij} = \Sigma_{ji}$). 
 
