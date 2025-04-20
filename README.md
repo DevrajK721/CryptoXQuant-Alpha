@@ -37,8 +37,7 @@ Then, you need to set up the `secrets.json` file which will be located at `$PROJ
         "HNT", "XVG", "DASH", "ZIL", "NANO", "OMG", "REN",
         "1INCH", "SUSHI", "YFI", "COMP", "SNX", "LRC", "STMX",
         "FET", "STPT", "LEND", "BAND", "ENJ", "LPT", "RLC"
-    ],
-    "Window Size": 40
+    ]
 }
 ```
 After this has ben set up, calling the DataProcessor Class initializer will automatically use the data you have provided in the secrets.json file to populate and compute the models for usage. I would recommend against using Hourly Data (Very noisy and remains non-stationary even after differencing operator applied) and Minutely Data (Same issue as Hourly Data but with additional extremely long runtime for fetching data using Binance API). 
