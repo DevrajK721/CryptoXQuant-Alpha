@@ -11,6 +11,9 @@ data/
 
 # Distribution / packaging
 .Python
+.vscode/
+covcomp.egg-info/
+build/
 build/
 develop-eggs/
 dist/
