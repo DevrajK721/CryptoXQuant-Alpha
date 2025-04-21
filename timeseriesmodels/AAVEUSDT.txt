@@ -1,0 +1,1 @@
+{"arima_order": [1, 1], "garch_order": [2, 2]}
