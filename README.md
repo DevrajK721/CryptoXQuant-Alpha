@@ -52,3 +52,5 @@ If you are interested in the technical aspect of any part of the strategies, I h
 [Technical Indicators & Lags](docs/technical_indicators_lags.md)
 
 [Covariance Computation](docs/covariance_computation.md)
+
+[ARIMA-GARCH Time Series Modelling](docs/time_series_modelling.md)
