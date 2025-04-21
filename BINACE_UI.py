@@ -1,84 +1,80 @@
-import os
-import json
-import streamlit as st
+import os, json, streamlit as st
 from binance.client import Client
 from binance.exceptions import BinanceAPIException
 import pandas as pd
 
-# ─── 1) Load your API keys ───────────────────────────────────────────────────────
-SECRETS_PATH = 'secrets/secrets.json'
+# ─── Load keys ────────────────────────────────────────────────────────────────
+SECRETS_PATH = os.path.join(os.path.dirname(__file__), "secrets/secrets.json")
 with open(SECRETS_PATH) as f:
     creds = json.load(f)
 client = Client(creds["BINANCE_API_KEY"], creds["BINANCE_API_SECRET"])
 
-# ─── 2) Helper functions ───────────────────────────────────────────────────────
+# ─── Helpers ─────────────────────────────────────────────────────────────────
 @st.cache_data(ttl=30)
 def get_balances():
-    """Fetch all asset balances (free + locked) and return non-zero ones."""
     info = client.get_account()
     df = pd.DataFrame(info["balances"])
     df[["free","locked"]] = df[["free","locked"]].astype(float)
     df["total"] = df["free"] + df["locked"]
-    df = df[df["total"]>0]
-    return df.set_index("asset")[["free","locked","total"]]
+    return df[df["total"]>0].set_index("asset")[["free","locked","total"]]
 
-def place_order(symbol: str, side: str, qty: float):
-    """Place a market buy or sell, return Binance response or error."""
+def place_buy(symbol: str, usdt_amt: float):
     try:
-        if side == "BUY":
-            return client.order_market_buy(symbol=symbol, quantity=qty)
-        else:
-            return client.order_market_sell(symbol=symbol, quantity=qty)
+        return client.order_market_buy(symbol=symbol, quoteOrderQty=usdt_amt)
     except BinanceAPIException as e:
         return {"error": e.message}
 
-def sell_all_positions():
-    """For each non-USDT balance, sell everything into USDT."""
+def place_sell(symbol: str, usdt_amt: float):
+    try:
+        # get current price
+        ticker = client.get_symbol_ticker(symbol=symbol)
+        price = float(ticker["price"])
+        qty = usdt_amt / price
+        # Binance requires correct step precision; truncate to 6 decimals for most coins
+        qty = float(f"{qty:.6f}")
+        return client.order_market_sell(symbol=symbol, quantity=qty)
+    except BinanceAPIException as e:
+        return {"error": e.message}
+
+def sell_all():
     bal = get_balances()
     outs = {}
-    for asset, row in bal.iterrows():
+    for asset,row in bal.iterrows():
         if asset == creds["Base Currency"]:
             continue
         free = row["free"]
-        symbol = asset + creds["Base Currency"]
+        sym  = asset + creds["Base Currency"]
         try:
-            resp = client.order_market_sell(symbol=symbol, quantity=round(free,8))
-            outs[symbol] = resp
+            resp = client.order_market_sell(symbol=sym, quantity=round(free,6))
+            outs[sym] = resp
         except BinanceAPIException as e:
-            outs[symbol] = {"error": e.message}
+            outs[sym] = {"error": e.message}
     return outs
 
-# ─── 3) Streamlit UI ───────────────────────────────────────────────────────────
-st.set_page_config(page_title="CryptoXQuant Trading", layout="wide")
-st.title("📈 CryptoXQuant Spot Trading")
+# ─── Streamlit UI ────────────────────────────────────────────────────────────
+st.title("📈 CryptoXQuant Trading")
 
-# Show balances
-st.subheader("Your Binance Balances")
-balances = get_balances()
-st.dataframe(balances)
+st.subheader("Balances")
+st.dataframe(get_balances())
 
 st.markdown("---")
+st.subheader("Market Order by USDT Amount")
 
-# Trade panel
-st.subheader("Place a Market Order")
 col1, col2 = st.columns(2)
-
 with col1:
-    symbol = st.text_input("Ticker symbol (e.g. BTCUSDT)", value=f"BTC{creds['Base Currency']}")
-    qty    = st.number_input("Quantity to trade", min_value=0.0, step=0.0001, format="%.8f")
+    symbol = st.text_input("Symbol (e.g. BTCUSDT)", value=f"BTC{creds['Base Currency']}").upper()
+    usdt_amt = st.number_input(f"Amount in {creds['Base Currency']}", min_value=0.0, step=1.0, format="%.2f")
 
 with col2:
     if st.button("Buy"):
-        result = place_order(symbol.upper(), "BUY", qty)
-        st.write(result)
+        result = place_buy(symbol, usdt_amt)
+        st.json(result)
     if st.button("Sell"):
-        result = place_order(symbol.upper(), "SELL", qty)
-        st.write(result)
+        result = place_sell(symbol, usdt_amt)
+        st.json(result)
 
 st.markdown("---")
-
-# Sell all button
 st.subheader("Close All Positions")
 if st.button("Sell All"):
-    results = sell_all_positions()
+    results = sell_all()
     st.json(results)
