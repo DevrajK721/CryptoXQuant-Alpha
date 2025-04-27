@@ -1,0 +1,28 @@
+name: Crypto_TS_Modeling
+channels:
+  - defaults 
+  - conda-forge
+dependencies:
+  - boto3
+  - pillow
+  - yfinance
+  - python=3.12
+  - requests
+  - flask
+  - pandas
+  - scipy
+  - tqdm
+  - ipykernel
+  - pyyaml
+  - jupyter
+  - matplotlib
+  - numpy
+  - scikit-learn
+  - pip[version='>=19.0']
+  - h5py
+  - statsmodels
+  - pybind11
+  - pmdarima
+  - pip
+  - pip:
+    - -r requirements.txt

@@ -3,12 +3,16 @@ import os, json, warnings
 import pandas as pd
 from src import DataProcessor as DP
 import covcomp
+import time
 from src.ARIMAGARCHPipeline import ARIMAGARCHPipeline as AGP
+from scipy.optimize import minimize
+from scipy.stats import norm
+import numpy as np
 
 warnings.filterwarnings("ignore")
 
 # 1) init data
-dp = DP.DataProcessor()
+dp = DP.DataProcessor(secrets_path='secrets/secrets.json')
 
 # 2) covariances (unchanged)
 cov_input = {
@@ -63,22 +67,66 @@ print("\n=== LIVE FORECASTS ===")
 for tk, f in forecasts.items():
     print(f"{tk}: μ={f['mean']:.5f}, σ={f['sigma']:.5f}")
 
-# ─── 5) Simple signal logic ────────────────────────────────────────────────────
-# set your cost hurdle (e.g. 0.2% round-trip) and S/N threshold
-c_min = 0.0001   # 0.1%
-k     = 0.3     # require at least a 1σ signal
+# ─── 5) Portfolio Optimization for Next 24 h with P(return>0) ≥ 70% ─────────
+# 5.1) build expected‐return vector μ and covariance matrix Σ
+tickers = list(forecasts.keys())
+mu_vec  = np.array([forecasts[t]['mean']  for t in tickers])
+cov_mat = cov_df.loc[tickers, tickers].values
 
-print("\n=== TRADING SIGNALS ===")
-for tk, f in forecasts.items():
-    mu    = f['mean']
-    sigma = f['sigma']
-    signal = mu / sigma if sigma>0 else 0.0
+# 5.2) get the z‐score corresponding to x% probability
+x = 59 # Enter Percent Risk 
+z_target = norm.ppf(x / 100)   
 
-    if (mu > c_min) and (signal > k):
-        action = "BUY"
-    elif (mu < -c_min) and (signal < -k):
-        action = "SELL"
-    else:
-        action = "HOLD"
+# 5.3) define objective = –Sharpe ratio
+def neg_sharpe(w, mu, cov):
+    ret = w @ mu
+    vol = np.sqrt(w @ cov @ w)
+    return -ret/vol
 
-    print(f"{tk}: μ={mu:.4f}, σ={sigma:.4f}, S/N={signal:.2f} → {action}")
+# 5.4) constraints:
+cons = [
+    # weights sum to 1
+    {'type':'eq', 'fun': lambda w: np.sum(w) - 1},
+    # enforce w·μ - z_target * sqrt(w·Σ·w) ≥ 0
+    {'type':'ineq',
+     'fun': lambda w, mu=mu_vec, cov=cov_mat, z=z_target:
+         (w @ mu) - z * np.sqrt(w @ cov @ w)
+    }
+]
+
+# long‐only bounds
+bnds = tuple((0.0, 1.0) for _ in tickers)
+
+# 5.5) initial guess: equal‐weight
+x0 = np.ones(len(tickers)) / len(tickers)
+
+# 5.6) solve
+res = minimize(
+    neg_sharpe, x0,
+    args=(mu_vec, cov_mat),
+    method='SLSQP',
+    bounds=bnds,
+    constraints=cons
+)
+
+if not res.success:
+    raise ValueError("Optimization failed: " + res.message)
+
+w_opt = res.x
+
+# 5.7) compute portfolio metrics
+port_ret    = w_opt @ mu_vec
+port_vol    = np.sqrt(w_opt @ cov_mat @ w_opt)
+port_sharpe = port_ret / port_vol
+prob_pos    = norm.cdf(port_sharpe)
+
+# 5.8) display
+print("\n=== OPTIMAL PORTFOLIO FOR NEXT 24 H (P>0 ≥ 70%) ===")
+for t, w in zip(tickers, w_opt):
+    if w > 1e-3:  # show only >0.1%
+        print(f"  {t}: {w*100:5.2f}%")
+        
+print(f"\n Expected return:     {port_ret*100:5.2f}%")
+print(f" Expected volatility: {port_vol*100:5.2f}%")
+print(f" Sharpe ratio:        {port_sharpe:5.2f}")
+print(f" P(return>0):         {prob_pos*100:5.1f}%")

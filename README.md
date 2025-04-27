@@ -1,15 +1,14 @@
-# CryptoXQuant-Alpha (Project CxQ-A)
-A multi-faceted research project into a complex alpha incorporating and combining the usage of classical time series models, LSTMs and statistical learning techniques to find a dynamic alpha to optimize a Cryptocurrency portfolio. 
+# Crypto_TS_Modeling 
+A research project for ARIMA-GARCH Model Fitting alongside computation of a covariance matrix between numerous assets in order to optimize a portfolio for multiple trading frequencies. 
 
 **Note: This project is purely for interest and research purposes. I am not responsible for any losses that occur as a result of using this GitHub Repository, please use at your own risk.**
 
 ## Brief Description
 Multi-Disciplinary Quantitative Trading Strategy invoking the usage of:
+- Manipulation of Time Series Data to ensure stationarity using ADF and KPSS Tests. 
 - Classic Time Series Modeling (ARIMA-GARCH Joint Model) `C++` with `PyBind11` for efficiency
-- Long-Short-Term-Memory (LSTM) Model (Form of Recurrent Neural Network (RNN)) `tensorflow` with `metal` support (MacOS X)
-- Classical Statistical Learning Techniques
 - Computation of covariance between assets
-- Combining multi-faceted strategy into single alpha which will be used in parrallel with the asset relations to compute the most optimal low-risk high-return (efficient frontier) portfolios. 
+- Combining multi-faceted strategy into single alpha which will be used in parallel with the asset relations to compute the most optimal low-risk high-return (efficient frontier) portfolios. 
 
 ## Usage
 ### Hidden Files
@@ -41,6 +40,28 @@ Then, you need to set up the `secrets.json` file which will be located at `$PROJ
 }
 ```
 After this has ben set up, calling the DataProcessor Class initializer will automatically use the data you have provided in the secrets.json file to populate and compute the models for usage. I would recommend against using Hourly Data (Very noisy and remains non-stationary even after differencing operator applied) and Minutely Data (Same issue as Hourly Data but with additional extremely long runtime for fetching data using Binance API). 
+
+Now, to configure your environment so everything works smoothly, 
+```shell 
+conda env create -f environment.yml
+conda activate Crypto_TS_Modeling
+```
+
+Finally, a fully automated procedure is now ready for trading information using, 
+```shell
+python main.py
+```
+
+**Note: If an error shows like below, just run the script again.** 
+```shell
+    return self._engine.get_loc(casted_key)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "index.pyx", line 167, in pandas._libs.index.IndexEngine.get_loc
+  File "index.pyx", line 196, in pandas._libs.index.IndexEngine.get_loc
+  File "pandas/_libs/hashtable_class_helper.pxi", line 2606, in pandas._libs.hashtable.Int64HashTable.get_item
+  File "pandas/_libs/hashtable_class_helper.pxi", line 2630, in pandas._libs.hashtable.Int64HashTable.get_item
+KeyError: 0
+```
 
 ## Documentation 
 If you are interested in the technical aspect of any part of the strategies, I have uploaded my notes of each section in the `docs` sections of the repository. Alternatively the hyperlinks below will be updated when documentation is available for it:

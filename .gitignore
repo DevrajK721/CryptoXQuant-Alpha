@@ -8,6 +8,7 @@ __pycache__/
 
 secrets/
 data/
+timeseriesmodels/
 
 # Distribution / packaging
 .Python
